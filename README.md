@@ -3,6 +3,8 @@ This plugin made with Example plugin template for use with CommonLibSSE by [Ryan
 
 SKSE64 Plugin made for using hotkeys with EquipSet.
 
+Currently CommonLibSSE all included in `extern`. I want to submodule it rather then included it all but, don't know how to do it with modified one.
+
 ## Requirements
 * [CMake](https://cmake.org/)
 	* Add this to your `PATH`
