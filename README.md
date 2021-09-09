@@ -19,7 +19,7 @@ SKSE64 Plugin made for using hotkeys with EquipSet.
 
 ## Building
 ```
-git https://github.com/neogulcity/SimpleHotkeysSSE
+git clone https://github.com/neogulcity/SimpleHotkeysSSE
 cd SimpleHotkeysSSE
 git submodule update --init --recursive
 cmake -B build -S .
