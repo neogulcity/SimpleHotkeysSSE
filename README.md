@@ -1,4 +1,6 @@
-This is a basic plugin template for use with CommonLibSSE
+# Simple Hotkeys
+This plugin made with Example plugin template for use with CommonLibSSE by [Ryan-rsm-McKenzie.](https://github.com/Ryan-rsm-McKenzie/ExamplePlugin-CommonLibSSE)
+SKSE64 Plugin made for using hotkeys with EquipSet.
 
 ## Requirements
 * [CMake](https://cmake.org/)
