@@ -23,6 +23,5 @@ Currently CommonLibSSE all included in `extern`. I want to submodule it rather t
 ```
 git clone https://github.com/neogulcity/SimpleHotkeysSSE
 cd SimpleHotkeysSSE
-git submodule update --init --recursive
 cmake -B build -S .
 ```
