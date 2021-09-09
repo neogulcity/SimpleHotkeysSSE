@@ -18,8 +18,8 @@ SKSE64 Plugin made for using hotkeys with EquipSet.
 
 ## Building
 ```
-git clone https://github.com/Ryan-rsm-McKenzie/ExamplePlugin-CommonLibSSE
-cd ExamplePlugin-CommonLibSSE
+git https://github.com/neogulcity/SimpleHotkeysSSE
+cd SimpleHotkeysSSE
 git submodule update --init --recursive
 cmake -B build -S .
 ```
