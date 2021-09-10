@@ -973,7 +973,7 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 
 			//Somehow can not find EquipSet. maybe EquipSet deleted so, just let cycle goes on.
 			else
-				++SH_CurCycle[a_index];
+				SH_CurCycle[a_index] >= SH_CycleEquipSetAddedCount[a_index] - (uint32_t)1 ? SH_CurCycle[a_index] = 0 : ++SH_CurCycle[a_index];
 
 		}
 	}
