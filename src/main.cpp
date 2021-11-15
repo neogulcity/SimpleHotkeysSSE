@@ -519,6 +519,7 @@ void SH_InitializeSKSE_EquipSetData(RE::StaticFunctionTag*)
 	SH_IsSetLefthand = a_SH_IsSetLefthand;
 	SH_Lefthand = a_SH_Lefthand;
 	SH_IsSetShout = a_SH_IsSetShout;
+	SH_Shout = a_SH_Shout;
 	SH_ItemsAddedCount = a_SH_ItemsAddedCount;
 	SH_CycleEquipSetAddedCount = a_SH_CycleEquipSetAddedCount;
 	SH_Items = a_SH_Items;
