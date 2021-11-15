@@ -31,6 +31,7 @@ std::vector<std::vector<RE::ExtraDataList*>> SH_Items_ExtraList;
 //=========================================================
 
 RE::TESForm* DummyDagger;
+RE::TESForm* DummyShout;
 
 //Get BGSEquipSlot EitherHand. It's currently not used. // 현재 사용되지 않음.
 RE::BGSEquipSlot* GetEitherHandSlot()
@@ -768,11 +769,17 @@ void ExecEquip(uint32_t a_index)
 				UnequipItem(a_form, nullptr, false, nullptr);
 			}
 		}
-
 	}
 	// Unequip shout option On
 	if (SH_UeqShout[a_index] == 1) {
+		auto playerref = RE::PlayerCharacter::GetSingleton();
+		if (!playerref)
+			return;
 
+		if (DummyShout) {
+			EquipItem(DummyShout, nullptr, false, nullptr, false, true);
+			UnequipItem(DummyShout, nullptr, false, nullptr, true);
+		}
 	}
 
 	// Toggle equip unequip, Re equip option On
@@ -1151,6 +1158,14 @@ void SH_DummyDaggerToSKSE(RE::StaticFunctionTag*, RE::TESForm* a_form)
 	DummyDagger = a_form;
 }
 
+void SH_DummyShoutToSKSE(RE::StaticFunctionTag*, RE::TESForm* a_form)
+{
+	if (!a_form)
+		return;
+
+	DummyShout = a_form;
+}
+
 RE::BSFixedString SH_GetVersion(RE::StaticFunctionTag*)
 {
 	return Version::NAME;
@@ -1175,6 +1190,7 @@ bool RegisterFuncs(RE::BSScript::Internal::VirtualMachine* a_vm)
 	a_vm->RegisterFunction("SH_IsPlayerBeast", "_SimpleHotkeys_MCM", SH_IsPlayerBeast);
 	a_vm->RegisterFunction("SH_GetVersion", "_SimpleHotkeys_MCM", SH_GetVersion);
 	a_vm->RegisterFunction("SH_DummyDaggerToSKSE", "_SimpleHotkeys_MCM", SH_DummyDaggerToSKSE);
+	a_vm->RegisterFunction("SH_DummyShoutToSKSE", "_SimpleHotkeys_MCM", SH_DummyShoutToSKSE);
 
 	return true;
 }
