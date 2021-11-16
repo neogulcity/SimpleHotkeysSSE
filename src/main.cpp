@@ -80,6 +80,38 @@ std::vector<RE::TESForm*> GetAllEquippedItems()
 	return result;
 }
 
+//Return true if Player has item // 플레이어의 아이템 소지 여부 반환.
+bool HasItem(RE::TESForm* a_form, RE::ExtraDataList* a_extralist)
+{
+	bool result = false;
+
+	if (!a_form)
+		return result;
+
+	if (a_form == DummyDagger)
+		return true;
+
+	auto playerref = RE::PlayerCharacter::GetSingleton();
+	if (!playerref)
+		return result;
+
+	auto inv = playerref->GetInventory();
+	for (const auto& [item, data] : inv) {
+		if (item->Is(RE::FormType::LeveledItem)) {
+			continue;
+		}
+		const auto& [count, entry] = data;
+		if (count > 0 && entry->IsFavorited()) {
+			if (item->GetName() == a_form->GetName() && entry->extraLists->front() == a_extralist) {
+				result = true;
+				break;
+			}
+		}
+	}
+
+	return result;
+}
+
 //Return name of all forms in form array // 배열에 있는 모든 form 의 이름을 리턴. 
 std::vector<std::string> GetStringArrayFromFormArray(std::vector<RE::TESForm*> a_form)
 {
@@ -135,11 +167,11 @@ void EquipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE::
 
 	//Items
 	} else {
+		if (HasItem(a_form, a_extralist)) {
+			RE::TESBoundObject* a_object = a_form->As<RE::TESBoundObject>();
 
-		RE::TESBoundObject* a_object = a_form->As<RE::TESBoundObject>();
-
-		equipManager->EquipObject(playerref, a_object, a_extralist, 1U, a_slot, a_queue, a_force, a_sound, false);
-
+			equipManager->EquipObject(playerref, a_object, a_extralist, 1U, a_slot, a_queue, a_force, a_sound, false);
+		}
 	}
 }
 
@@ -1131,13 +1163,12 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 				}
 
 			}
-
 			//Execute cycle EquipSet
 			if (b_index != -1)
 				ExecEquip((uint32_t)b_index);
 
 			//Somehow can not find EquipSet. maybe EquipSet deleted so, just let cycle goes on.
-			else
+			else 
 				SH_CurCycle[a_index] >= SH_CycleEquipSetAddedCount[a_index] - (uint32_t)1 ? SH_CurCycle[a_index] = 0 : ++SH_CurCycle[a_index];
 
 		}
