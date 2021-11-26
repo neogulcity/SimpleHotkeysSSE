@@ -9,6 +9,7 @@ std::vector<uint32_t> SH_EquipSound;
 std::vector<uint32_t> SH_EqUeq;
 std::vector<uint32_t> SH_Req;
 std::vector<uint32_t> SH_CyclePersist;
+std::vector<float> SH_CycleTimeout;
 std::vector<uint32_t> SH_UeqRight;
 std::vector<uint32_t> SH_UeqLeft;
 std::vector<uint32_t> SH_UeqShout;
@@ -29,9 +30,86 @@ std::vector<RE::ExtraDataList*> SH_Righthand_ExtraList;
 std::vector<RE::ExtraDataList*> SH_Lefthand_ExtraList;
 std::vector<std::vector<RE::ExtraDataList*>> SH_Items_ExtraList;
 //=========================================================
-
 RE::TESForm* DummyDagger;
 RE::TESForm* DummyShout;
+
+
+std::vector<bool> SH_CycleLock;
+std::vector<float> SH_CycleTCount;
+bool CloseThread = false;
+
+bool IsMenuOpen(RE::UI* UI)
+{
+	bool result = false;
+	if (!UI)
+		return result;
+
+	if (UI->IsMenuOpen("InventoryMenu")) result = true;
+	else if (UI->IsMenuOpen("ContainerMenu")) result = true;
+	else if (UI->IsMenuOpen("MagicMenu")) result = true;
+	else if (UI->IsMenuOpen("MapMenu")) result = true;
+	else if (UI->IsMenuOpen("StatsMenu")) result = true;
+	else if (UI->IsMenuOpen("TweenMenu")) result = true;
+	else if (UI->IsMenuOpen("Quantity Menu")) result = true;
+	else if (UI->IsMenuOpen("Console")) result = true;
+	else if (UI->IsMenuOpen("BarterMenu")) result = true;
+	else if (UI->IsMenuOpen("Book Menu")) result = true;
+	else if (UI->IsMenuOpen("Journal Menu")) result = true;
+	else if (UI->IsMenuOpen("LevelUp Menu")) result = true;
+	else if (UI->IsMenuOpen("Training Menu")) result = true;
+	
+	return result;
+}
+
+class Timer
+{
+public:
+	void CreateTimer(int32_t id, float input);
+};
+
+void Timer_EndFunction(int32_t id)
+{
+	SH_CurCycle[id] = 0;
+	SH_CycleStoredIndex[id] = id;
+	SH_CycleTCount[id] = 0.0;
+	SH_CycleLock[id] = false;
+}
+
+int32_t Timer_Function(int32_t id, int32_t input)
+{
+	auto UI = RE::UI::GetSingleton();
+	if (!UI)
+		return 0;
+
+	float MAX = float(input);
+	while (!CloseThread) {
+		if (SH_CycleTCount[id] < MAX) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			if (!CloseThread && !IsMenuOpen(UI))
+				SH_CycleTCount[id] += 100.0;
+
+		} else
+			break;
+	}
+
+	if (!CloseThread)
+		Timer_EndFunction(id);
+
+	return 0;
+}
+
+void Timer::CreateTimer(int32_t id, float input)
+{
+	std::thread t1(Timer_Function, id, int32_t(input * 1000));
+	t1.detach();
+}
+
+void CloseAllThread()
+{
+	CloseThread = true;
+	std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	CloseThread = false;
+}
 
 //Get BGSEquipSlot EitherHand. It's currently not used. // 현재 사용되지 않음.
 RE::BGSEquipSlot* GetEitherHandSlot()
@@ -112,7 +190,7 @@ bool HasItem(RE::TESForm* a_form, RE::ExtraDataList* a_extralist)
 	return result;
 }
 
-//Return name of all forms in form array // 배열에 있는 모든 form 의 이름을 리턴. 
+//Return name of all forms in form array // 배열에 있는 모든 form 의 이름을 리턴.
 std::vector<std::string> GetStringArrayFromFormArray(std::vector<RE::TESForm*> a_form)
 {
 	std::vector<std::string> result;
@@ -137,8 +215,8 @@ bool IsMagicFavorited(RE::TESForm* a_form)
 	return false;
 }
 
-//Equip Item 
-void EquipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE::ExtraDataList *a_extralist, bool a_queue = true, bool a_force = false)
+//Equip Item
+void EquipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE::ExtraDataList* a_extralist, bool a_queue = true, bool a_force = false)
 {
 	if (!a_form)
 		return;
@@ -150,24 +228,26 @@ void EquipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE::
 	auto playerref = RE::PlayerCharacter::GetSingleton();
 	if (!playerref)
 		return;
-	
+
 	//Check FormType Spell
 	if (a_form->Is(RE::FormType::Spell)) {
-
 		RE::SpellItem* a_spell = a_form->As<RE::SpellItem>();
 
 		equipManager->EquipSpell(playerref, a_spell, a_slot);
 
-	//Check FormType Shout
+		//Check FormType Shout
 	} else if (a_form->Is(RE::FormType::Shout)) {
-
 		RE::TESShout* a_shout = a_form->As<RE::TESShout>();
 
 		equipManager->EquipShout(playerref, a_shout);
 
-	//Items
+		//Items
 	} else {
-		if (HasItem(a_form, a_extralist)) {
+		if (a_form->GetFormType() == RE::FormType::Light) {
+			RE::TESBoundObject* a_object = a_form->As<RE::TESBoundObject>();
+
+			equipManager->EquipObject(playerref, a_object, nullptr, 1U, a_slot, a_queue, a_force, a_sound, false);
+		} else if (HasItem(a_form, a_extralist)) {
 			RE::TESBoundObject* a_object = a_form->As<RE::TESBoundObject>();
 
 			equipManager->EquipObject(playerref, a_object, a_extralist, 1U, a_slot, a_queue, a_force, a_sound, false);
@@ -176,7 +256,7 @@ void EquipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE::
 }
 
 //Unequip Item
-void UnequipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE::ExtraDataList* a_list, bool a_force = false)
+void UnequipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE::ExtraDataList* a_list, bool a_queue = false, bool a_force = false)
 {
 	if (!a_form)
 		return;
@@ -193,16 +273,8 @@ void UnequipItem(RE::TESForm* a_form, RE::BGSEquipSlot* a_slot, bool a_sound, RE
 		//Need to figure out Unequip Shout // Shout Unequip 은 아직 확인이 더 필요.
 
 	} else {
-		if (a_form->Is(RE::FormType::Spell)) {
-			if (DummyDagger) {
-				RE::TESBoundObject* a_dummy = DummyDagger->As<RE::TESBoundObject>();
-				equipManager->EquipObject(playerref, a_dummy, nullptr, 1U, a_slot, false, true, false, false);
-				equipManager->UnequipObject(playerref, a_dummy, nullptr, 1U, a_slot, false, true, false, false, nullptr);
-			}
-		} else {
-			RE::TESBoundObject* a_object = a_form->As<RE::TESBoundObject>();
-			equipManager->UnequipObject(playerref, a_object, a_list, 1U, a_slot, false, a_force, a_sound, false, nullptr);
-		}
+		RE::TESBoundObject* a_object = a_form->As<RE::TESBoundObject>();
+		equipManager->UnequipObject(playerref, a_object, a_list, 1U, a_slot, a_queue, a_force, a_sound, false, nullptr);
 	}
 }
 
@@ -218,7 +290,7 @@ std::vector<RE::TESForm*> SH_GetFavItems(RE::StaticFunctionTag*)
 	*	Misc
 	*	SoulGem
 	*	ETC
-	*/	
+	*/
 	std::vector<RE::TESForm*> result;
 	std::vector<std::pair<std::string, RE::TESForm*>> temp_armor, temp_ammo, temp_alchemy, temp_scroll, temp_ingredient, temp_misc, temp_soulgem, temp_etc;
 	uint32_t armor_count = 0, ammo_count = 0, alchemy_count = 0, scroll_count = 0, ingredient_count = 0, misc_count = 0, soulgem_count = 0, etc_count = 0;
@@ -273,7 +345,7 @@ std::vector<RE::TESForm*> SH_GetFavItems(RE::StaticFunctionTag*)
 	sort(temp_soulgem.begin(), temp_soulgem.end());
 	sort(temp_etc.begin(), temp_etc.end());
 
-	// push back to result 
+	// push back to result
 	for (uint32_t i = 0; i < armor_count; ++i) {
 		result.push_back(temp_armor[i].second);
 	}
@@ -354,7 +426,6 @@ std::vector<RE::TESForm*> SH_GetFavWeapSpells(RE::StaticFunctionTag*)
 
 	sort(temp_spells.begin(), temp_spells.end());
 
-	
 	for (uint32_t i = 0; i < weapcount; ++i) {
 		result.push_back(temp_weaps[i].second);
 		//logger::info("Weapon : {}", temp_weaps[i].first);
@@ -364,11 +435,9 @@ std::vector<RE::TESForm*> SH_GetFavWeapSpells(RE::StaticFunctionTag*)
 		result.push_back(temp_spells[i].second);
 		//logger::info("Spell : {}", temp_spells[i].first);
 	}
-	
 
 	return result;
 }
-
 
 //Get Equipped Shout Papyrus Function
 RE::TESForm* SH_GetEquippedShout(RE::StaticFunctionTag*)
@@ -387,7 +456,7 @@ RE::TESForm* SH_GetEquippedShout(RE::StaticFunctionTag*)
 	return a_shout;
 }
 
-//Get Equipped Shout 
+//Get Equipped Shout
 RE::TESForm* GetEquippedShout()
 {
 	auto playerref = RE::PlayerCharacter::GetSingleton();
@@ -408,7 +477,7 @@ RE::TESForm* GetEquippedShout()
 bool SH_ReturnToggleBool(RE::StaticFunctionTag*, bool a_bool)
 {
 	return a_bool ? false : true;
-}	
+}
 
 //Return all name of forms in array. // form 배열에 있는 모든 이름을 리턴.
 std::vector<RE::BSFixedString> SH_GetFormsName(RE::StaticFunctionTag*, std::vector<RE::TESForm*> a_form)
@@ -417,7 +486,7 @@ std::vector<RE::BSFixedString> SH_GetFormsName(RE::StaticFunctionTag*, std::vect
 
 	for (uint32_t i = 0; i < a_form.size(); ++i)
 		result.push_back(a_form[i]->GetName());
-	
+
 	return result;
 }
 
@@ -440,7 +509,7 @@ std::vector<RE::TESForm*> SH_PushLastInArray(RE::StaticFunctionTag*, RE::TESForm
 	for (uint32_t i = 0; i < desc_form.size(); ++i) {
 		result.push_back(desc_form[i]);
 	}
-	
+
 	result.push_back(src_form);
 
 	return result;
@@ -482,7 +551,7 @@ uint32_t SH_CheckString(RE::StaticFunctionTag*, RE::BSFixedString a_string, std:
 		//std::string test_string = static_cast<std::string>(b_string[i]);
 		//logger::info("EquipSetNameList{} : {}", i, test_string);
 		if (a_string == b_string[i]) {
-			return (uint32_t)1; // Result = 1 : EquipSet name conflicts with other EquipSet. // Result = 1 : EquipSet 이름이 다른 EquipSet과 겹침
+			return (uint32_t)1;  // Result = 1 : EquipSet name conflicts with other EquipSet. // Result = 1 : EquipSet 이름이 다른 EquipSet과 겹침
 		}
 	}
 	std::string ab_string = static_cast<std::string>(a_string);
@@ -491,12 +560,12 @@ uint32_t SH_CheckString(RE::StaticFunctionTag*, RE::BSFixedString a_string, std:
 	temp_string.erase(remove(temp_string.begin(), temp_string.end(), ' '), temp_string.end());
 
 	if (temp_string == "")
-		return (uint32_t)2; // Result = 2 : EquipSet named blank // Result = 2 : EquipSet 이름이 공란임
+		return (uint32_t)2;  // Result = 2 : EquipSet named blank // Result = 2 : EquipSet 이름이 공란임
 
 	else if (ab_string.find(".") == std::string::npos)
 		return (uint32_t)0;
 	else
-		return (uint32_t)3; // Result = 3 : EquipSet named with '.' : Json path solve using '.' so, EquipSet should not be named with '.' // Result = 3 : EquipSet 이름이 '.' 을 포함. Json 에서 '.' 을 이용하기 때문에 '.' 을 포함하면 안됨.
+		return (uint32_t)3;  // Result = 3 : EquipSet named with '.' : Json path solve using '.' so, EquipSet should not be named with '.' // Result = 3 : EquipSet 이름이 '.' 을 포함. Json 에서 '.' 을 이용하기 때문에 '.' 을 포함하면 안됨.
 
 	return (uint32_t)0;
 }
@@ -517,6 +586,7 @@ void SH_InitializeSKSE_EquipSetData(RE::StaticFunctionTag*)
 	std::vector<uint32_t> a_SH_UeqLeft;
 	std::vector<uint32_t> a_SH_UeqShout;
 	std::vector<uint32_t> a_SH_CyclePersist;
+	std::vector<float> a_SH_CycleTimeout;
 	std::vector<uint32_t> a_SH_IsSetRighthand;
 	std::vector<RE::TESForm*> a_SH_Righthand;
 	std::vector<uint32_t> a_SH_IsSetLefthand;
@@ -533,6 +603,8 @@ void SH_InitializeSKSE_EquipSetData(RE::StaticFunctionTag*)
 	std::vector<RE::ExtraDataList*> a_SH_Righthand_ExtraList;
 	std::vector<RE::ExtraDataList*> a_SH_Lefthand_ExtraList;
 	std::vector<std::vector<RE::ExtraDataList*>> a_SH_Items_ExtraList;
+	std::vector<bool> a_SH_CycleLock;
+	std::vector<float> a_SH_CycleTCount;
 
 	SH_EquipSetName = a_SH_EquipSetName;
 	SH_IsCycleEquipSet = a_SH_IsCycleEquipSet;
@@ -547,6 +619,7 @@ void SH_InitializeSKSE_EquipSetData(RE::StaticFunctionTag*)
 	SH_UeqLeft = a_SH_UeqLeft;
 	SH_UeqShout = a_SH_UeqShout;
 	SH_CyclePersist = a_SH_CyclePersist;
+	SH_CycleTimeout = a_SH_CycleTimeout;
 	SH_IsSetRighthand = a_SH_IsSetRighthand;
 	SH_Righthand = a_SH_Righthand;
 	SH_IsSetLefthand = a_SH_IsSetLefthand;
@@ -563,10 +636,15 @@ void SH_InitializeSKSE_EquipSetData(RE::StaticFunctionTag*)
 	SH_Righthand_ExtraList = a_SH_Righthand_ExtraList;
 	SH_Lefthand_ExtraList = a_SH_Lefthand_ExtraList;
 	SH_Items_ExtraList = a_SH_Items_ExtraList;
+	SH_CycleLock = a_SH_CycleLock;
+	SH_CycleTCount = a_SH_CycleTCount;
+
+	std::thread t2(CloseAllThread);
+	t2.detach();
 }
 
 //Get EquipSet Data form Papyrus
-void SH_EquipSetDataToSKSE(RE::StaticFunctionTag*, bool IsCycle, RE::BSFixedString a_EquipSetName, int32_t a_Hotkey, uint32_t a_Shift, uint32_t a_Ctrl, uint32_t a_Alt, uint32_t a_EquipSound, uint32_t a_EqUeq, uint32_t a_Req, uint32_t a_CyclePersist, uint32_t a_UeqRight, uint32_t a_UeqLeft, uint32_t a_UeqShout, uint32_t a_IsSetRighthand, RE::TESForm* a_Righthand, uint32_t a_IsSetLefthand, RE::TESForm* a_Lefthand, uint32_t a_IsSetShout, RE::TESForm* a_Shout, uint32_t a_ItemsAddedCount, std::vector<RE::TESForm*> a_Items, uint32_t a_CycleEquipSetAddedCount, std::vector<RE::BSFixedString> a_EquipSets)
+void SH_EquipSetDataToSKSE(RE::StaticFunctionTag*, bool IsCycle, RE::BSFixedString a_EquipSetName, int32_t a_Hotkey, uint32_t a_Shift, uint32_t a_Ctrl, uint32_t a_Alt, uint32_t a_EquipSound, uint32_t a_EqUeq, uint32_t a_Req, uint32_t a_CyclePersist, float a_CycleTimeout, uint32_t a_UeqRight, uint32_t a_UeqLeft, uint32_t a_UeqShout, uint32_t a_IsSetRighthand, RE::TESForm* a_Righthand, uint32_t a_IsSetLefthand, RE::TESForm* a_Lefthand, uint32_t a_IsSetShout, RE::TESForm* a_Shout, uint32_t a_ItemsAddedCount, std::vector<RE::TESForm*> a_Items, uint32_t a_CycleEquipSetAddedCount, std::vector<RE::BSFixedString> a_EquipSets)
 {
 	SH_EquipSetName.push_back(a_EquipSetName);
 	SH_Hotkey.push_back(a_Hotkey);
@@ -580,6 +658,7 @@ void SH_EquipSetDataToSKSE(RE::StaticFunctionTag*, bool IsCycle, RE::BSFixedStri
 	SH_UeqLeft.push_back(a_UeqLeft);
 	SH_UeqShout.push_back(a_UeqShout);
 	SH_CyclePersist.push_back(a_CyclePersist);
+	SH_CycleTimeout.push_back(a_CycleTimeout);
 	SH_IsSetRighthand.push_back(a_IsSetRighthand);
 	SH_Righthand.push_back(a_Righthand);
 	SH_IsSetLefthand.push_back(a_IsSetLefthand);
@@ -599,6 +678,9 @@ void SH_EquipSetDataToSKSE(RE::StaticFunctionTag*, bool IsCycle, RE::BSFixedStri
 
 	SH_CurCycle.push_back((uint32_t)0);
 	SH_CycleStoredIndex.push_back((int32_t)-1);
+
+	SH_CycleLock.push_back(false);
+	SH_CycleTCount.push_back(0.0);
 
 	auto playerref = RE::PlayerCharacter::GetSingleton();
 	auto inv = playerref->GetInventory();
@@ -715,9 +797,9 @@ void SH_EquipSetDataToSKSE(RE::StaticFunctionTag*, bool IsCycle, RE::BSFixedStri
 		if (a_Alt == 1)
 			result = result + (int32_t)4000;
 
-		SH_Input_Keycode.push_back(result); 
+		SH_Input_Keycode.push_back(result);
 	} else {
-		SH_Input_Keycode.push_back((int32_t)-1); 
+		SH_Input_Keycode.push_back((int32_t)-1);
 	}
 
 	/*
@@ -736,6 +818,8 @@ void SH_EquipSetDataToSKSE(RE::StaticFunctionTag*, bool IsCycle, RE::BSFixedStri
 		for (uint32_t i = 0; i < SH_CycleEquipSetAddedCount[a_int]; ++i) {
 			logger::info("EquipSets{} : {}", i, SH_EquipSets[a_int][i]);
 		}
+
+		logger::info("CycleTimeout : {}", SH_CycleTimeout[a_int]);
 		
 	} else {
 		logger::info("==================================");
@@ -764,282 +848,172 @@ void SH_EquipSetDataToSKSE(RE::StaticFunctionTag*, bool IsCycle, RE::BSFixedStri
 //Execute SKSE Equip Function
 void ExecEquip(uint32_t a_index)
 {
+	auto playerref = RE::PlayerCharacter::GetSingleton();
+
+	if (!playerref)
+		return;
+
+	bool EquipRight = false, EquipLeft = false, EquipShout = false;
+	bool UnequipRight = false, UnequipLeft = false, UnequipShout = false;
+	std::vector<bool> EquipItems, UnequipItems;
+
+	for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
+		EquipItems.push_back(false);
+		UnequipItems.push_back(false);
+	}
+
 	// Unequip right option On
 	if (SH_UeqRight[a_index] == 1) {
-		auto playerref = RE::PlayerCharacter::GetSingleton();
-		if (!playerref)
-			return;
-
-		RE::TESForm* a_form = playerref->GetEquippedObject(false);
-
-		if (a_form) {
-			if (a_form->Is(RE::FormType::Spell)) {
-				if (DummyDagger) {
-					EquipItem(DummyDagger, GetRightHandSlot(), false, nullptr, false, true);
-					UnequipItem(DummyDagger, GetRightHandSlot(), false, nullptr, true);
-				}
-			} else {
-				UnequipItem(a_form, nullptr, false, nullptr);
-			}
-		}
+		UnequipRight = true;
 	}
 	// Unequip left option On
 	if (SH_UeqLeft[a_index] == 1) {
-		auto playerref = RE::PlayerCharacter::GetSingleton();
-		if (!playerref)
-			return;
-
-		RE::TESForm* a_form = playerref->GetEquippedObject(true);
-		
-		if (a_form) {
-			if (a_form->Is(RE::FormType::Spell)) {
-				if (DummyDagger) {
-					EquipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, false, true);
-					UnequipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, true);
-				}
-			} else {
-				UnequipItem(a_form, nullptr, false, nullptr);
-			}
-		}
+		UnequipLeft = true;
 	}
 	// Unequip shout option On
 	if (SH_UeqShout[a_index] == 1) {
-		auto playerref = RE::PlayerCharacter::GetSingleton();
-		if (!playerref)
-			return;
+		UnequipShout = true;
+	}
 
+	RE::TESForm* right_form = playerref->GetEquippedObject(false);
+	RE::TESForm* left_form = playerref->GetEquippedObject(true);
+	RE::TESForm* shout_form = GetEquippedShout();
+
+	// Toggle equip/unequip option Off & Re equip option On
+	if (SH_EqUeq[a_index] == 0 && SH_Req[a_index] == 1) {
+		EquipRight = true;
+		EquipLeft = true;
+		EquipShout = true;
+		UnequipRight = true;
+		UnequipLeft = true;
+		UnequipShout = true;
+		for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
+			EquipItems[i] = true;
+			UnequipItems[i] = true;
+		}
+	}
+
+	else {
+		// Toggle equip/unequip option Off & Re equip option Off
+		if (SH_IsSetRighthand[a_index] == 1) {
+			if (!right_form)
+				EquipRight = true;
+
+			else if (right_form->GetName() != SH_Righthand[a_index]->GetName())
+				EquipRight = true;
+		}
+		if (SH_IsSetLefthand[a_index] == 1) {
+			if (!left_form)
+				EquipLeft = true;
+
+			else if (left_form->GetName() != SH_Lefthand[a_index]->GetName())
+				EquipLeft = true;
+		}
+		if (SH_IsSetShout[a_index] == 1) {
+			if (!shout_form)
+				EquipShout = true;
+
+			else if (shout_form->GetName() != SH_Shout[a_index]->GetName())
+				EquipShout = true;
+		}
+
+		uint32_t a_count = 0;
+		if (SH_ItemsAddedCount[a_index] > 0) {
+			std::vector<RE::TESForm*> a_form = GetAllEquippedItems();
+			std::vector<std::string> a_string = static_cast<std::vector<std::string>>(GetStringArrayFromFormArray(a_form));
+			std::vector<bool> a_equipped;
+
+			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i)
+				a_equipped.push_back(false);
+
+			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
+				for (int j = 0; j < a_form.size(); ++j) {
+					if (a_string[j].compare(SH_Items[a_index][i]->GetName()) == 0) {
+						a_equipped[i] = true;
+						++a_count;
+					}
+				}
+			}
+
+			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
+				if (!a_equipped[i]) {
+					EquipItems[i] = true;
+				}
+			}
+		}
+
+		if (SH_EqUeq[a_index] == 1) {
+			// Toggle equip/unequip option On & Re equip option Off
+			if (!EquipRight && !EquipLeft && !EquipShout && a_count == SH_ItemsAddedCount[a_index]) {
+				UnequipRight = true;
+				UnequipLeft = true;
+				UnequipShout = true;
+				for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i)
+					UnequipItems[i] = true;
+			}
+
+			// Toggle equip/unequip option On & Re equip option On
+			else if (SH_Req[a_index] == 1) {
+				EquipRight = true;
+				EquipLeft = true;
+				EquipShout = true;
+				UnequipRight = true;
+				UnequipLeft = true;
+				UnequipShout = true;
+				for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
+					EquipItems[i] = true;
+					UnequipItems[i] = true;
+				}
+			}
+		}
+	}
+	if (UnequipRight) {
+		if (DummyDagger) {
+			EquipItem(DummyDagger, GetRightHandSlot(), false, nullptr, false, true);
+			UnequipItem(DummyDagger, GetRightHandSlot(), false, nullptr, false, true);
+		}
+	}
+	if (UnequipLeft) {
+		if (DummyDagger) {
+			EquipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, false, true);
+			UnequipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, false, true);
+		}
+	}
+	if (UnequipShout) {
 		if (DummyShout) {
 			EquipItem(DummyShout, nullptr, false, nullptr, false, true);
-			UnequipItem(DummyShout, nullptr, false, nullptr, true);
+			UnequipItem(DummyShout, nullptr, false, nullptr, false, true);
 		}
 	}
 
-	// Toggle equip unequip, Re equip option On
-	if (SH_EqUeq[a_index] == 1 && SH_Req[a_index] == 1) {
-		auto playerref = RE::PlayerCharacter::GetSingleton();
-		bool IsChanged = false;
-		if (!playerref)
-			return;
-
-		if (SH_IsSetRighthand[a_index] == 1) {
-			RE::TESForm* a_form = playerref->GetEquippedObject(false);
-
-			if (!a_form)
-				IsChanged = true;
-
-			else if (a_form->GetName() != SH_Righthand[a_index]->GetName()) {
-				IsChanged = true;
-			}
-		}
-		if (SH_IsSetLefthand[a_index] == 1 && !IsChanged) {
-			RE::TESForm* a_form = playerref->GetEquippedObject(true);
-
-			if (!a_form)
-				IsChanged = true;
-
-			else if (a_form->GetName() != SH_Lefthand[a_index]->GetName()) {
-				IsChanged = true;
-			}
-		}
-		if (SH_IsSetShout[a_index] == 1 && !IsChanged) {
-			RE::TESForm* a_form = GetEquippedShout();
-
-			if (!a_form)
-				IsChanged = true;
-
-			else if (a_form->GetName() != SH_Shout[a_index]->GetName()) {
-				IsChanged = true;
-			}
-		}
-		if (!IsChanged) {
-			std::vector<RE::TESForm*> a_form = GetAllEquippedItems();
-			std::vector<std::string> a_string = static_cast<std::vector<std::string>>(GetStringArrayFromFormArray(a_form));
-
-			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
-				int a_count = 0;
-
-				for (int j = 0; j < a_form.size(); ++j) {
-					if (a_string[j].compare(SH_Items[a_index][i]->GetName()) == 0) {
-						++a_count;
-					}
-				}
-				if (a_count == 0) {
-					IsChanged = true;
-					break;
-				}
-			}
-		}
-
-		// Equipped weapons, spells, shout, items Changed so, Execute re equip EquipSet.
-		if (IsChanged) {
-			if (DummyDagger) {
-				SH_IsSetRighthand[a_index] == 1 ? EquipItem(DummyDagger, GetRightHandSlot(), false, nullptr, false, true) : void(0);
-				SH_IsSetLefthand[a_index] == 1 ? EquipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, false, true) : void(0);
-
-				SH_IsSetRighthand[a_index] == 1 ? UnequipItem(DummyDagger, GetRightHandSlot(), false, nullptr, true) : void(0);
-				SH_IsSetLefthand[a_index] == 1 ? UnequipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, true) : void(0);
-			}
-
-			SH_IsSetRighthand[a_index] == 1 ? EquipItem(SH_Righthand[a_index], GetRightHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Righthand_ExtraList[a_index]) : void(0);
-			SH_IsSetLefthand[a_index] == 1 ? EquipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
-			SH_IsSetShout[a_index] == 1 ? EquipItem(SH_Shout[a_index], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, nullptr) : void(0);
-
-			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
-				EquipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
-			}
-		}
-		
-		// All EquipSet weapons, spells, shout, items matched with equipped so, Execute unequip EquipSet
-		else {
-			SH_IsSetRighthand[a_index] == 1 ? UnequipItem(SH_Righthand[a_index], GetRightHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Righthand_ExtraList[a_index]) : void(0);
-			SH_IsSetLefthand[a_index] == 1 ? UnequipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
-			SH_IsSetShout[a_index] == 1 ? UnequipItem(SH_Shout[a_index], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, nullptr) : void(0);
-
-			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
-				UnequipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
-			}
-		}
+	for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
+		if (UnequipItems[i])
+			UnequipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
 	}
-	// Toggle equip unequip option On, Re equip option Off
-	else if (SH_EqUeq[a_index] == 1 && SH_Req[a_index] == 0) {
-		auto playerref = RE::PlayerCharacter::GetSingleton();
-		bool a_EqRight = false, a_EqLeft = false, a_EqShout = false, a_EqItems = false;
-		if (!playerref)
-			return;
 
-		if (SH_IsSetRighthand[a_index] == 1) {
-			RE::TESForm* a_form = playerref->GetEquippedObject(false);
-
-			if (!a_form)
-				a_EqRight = true;
-			
-
-			else if (a_form->GetName() != SH_Righthand[a_index]->GetName())
-				a_EqRight = true;
-			
-		}
-		if (SH_IsSetLefthand[a_index] == 1) {
-			RE::TESForm* a_form = playerref->GetEquippedObject(true);
-
-			if (!a_form)
-				a_EqLeft = true;
-			
-			else if (a_form->GetName() != SH_Lefthand[a_index]->GetName())
-				a_EqLeft = true;
-			
-		}
-		if (SH_IsSetShout[a_index] == 1) {
-			RE::TESForm* a_form = GetEquippedShout();
-
-			if (!a_form)
-				a_EqShout = true;
-
-			else if (a_form->GetName() != SH_Shout[a_index]->GetName())
-				a_EqShout = true;
-
-		}
-		if (!a_EqRight && !a_EqLeft && !a_EqShout) {
-			std::vector<RE::TESForm*> a_form = GetAllEquippedItems();
-			std::vector<std::string> a_string = static_cast<std::vector<std::string>>(GetStringArrayFromFormArray(a_form));
-
-			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
-				int a_count = 0;
-
-				for (int j = 0; j < a_form.size(); ++j) {
-					if (a_string[j].compare(SH_Items[a_index][i]->GetName()) == 0) {
-						++a_count;
-					}
-				}
-				if (a_count == 0) {
-					a_EqItems = true;
-					break;
-				}
-			}
-		}
-
-		// Equipped weapons, spells, shout, items Changed so, Execute equip EquipSet.
-		if (a_EqRight || a_EqLeft || a_EqShout || a_EqItems) {
-			a_EqRight ? EquipItem(SH_Righthand[a_index], GetRightHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Righthand_ExtraList[a_index]) : void(0);
-			a_EqLeft ? EquipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
-			a_EqShout ? EquipItem(SH_Shout[a_index], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, nullptr) : void(0);
-
-			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
-				EquipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
-			}
-		}
-		// All EquipSet weapons, spells, shout, items matched with equipped so, Execute unequip EquipSet
-		else {
-			SH_IsSetRighthand[a_index] == 1 ? UnequipItem(SH_Righthand[a_index], GetRightHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Righthand_ExtraList[a_index]) : void(0);
-			SH_IsSetLefthand[a_index] == 1 ? UnequipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
-			SH_IsSetShout[a_index] == 1 ? UnequipItem(SH_Shout[a_index], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, nullptr) : void(0);
-			
-			for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
-				UnequipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
-			}
-		}
-
-	}
-	// Toggle equip unequip option Off, Re equip option On
-	else if (SH_EqUeq[a_index] == 0 && SH_Req[a_index] == 1) {
-		if (DummyDagger) {
-			SH_IsSetRighthand[a_index] == 1 ? EquipItem(DummyDagger, GetRightHandSlot(), false, nullptr, false, true) : void(0);
-			SH_IsSetLefthand[a_index] == 1 ? EquipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, false, true) : void(0);
-
-			SH_IsSetRighthand[a_index] == 1 ? UnequipItem(DummyDagger, GetRightHandSlot(), false, nullptr, true) : void(0);
-			SH_IsSetLefthand[a_index] == 1 ? UnequipItem(DummyDagger, GetLeftHandSlot(), false, nullptr, true) : void(0);
-		}
-		
+	if (EquipRight)
 		SH_IsSetRighthand[a_index] == 1 ? EquipItem(SH_Righthand[a_index], GetRightHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Righthand_ExtraList[a_index]) : void(0);
+
+	if (EquipLeft)
 		SH_IsSetLefthand[a_index] == 1 ? EquipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
+	
+	if (EquipShout)
 		SH_IsSetShout[a_index] == 1 ? EquipItem(SH_Shout[a_index], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, nullptr) : void(0);
 
-		for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
-			EquipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
-		}
-	}
-	// Toggle equip unequip option Off, Re equip option Off
-	else {
-		auto playerref = RE::PlayerCharacter::GetSingleton();
-		bool a_EqRight = false, a_EqLeft = false, a_EqShout = false;
-		if (!playerref)
-			return;
+	for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
+		if (EquipItems[i]) {
+			if (SH_Items[a_index][i]->GetFormType() == RE::FormType::Light) {
+				RE::TESForm* a_form = playerref->GetEquippedObject(false);
 
-		if (SH_IsSetRighthand[a_index] == 1) {
-			RE::TESForm* a_form = playerref->GetEquippedObject(false);
-
-			if (!a_form)
-				a_EqRight = true;
-
-			else if (a_form->GetName() != SH_Righthand[a_index]->GetName()) {
-				a_EqRight = true;
+				if (a_form) {
+					RE::WEAPON_TYPE a_type = a_form->As<RE::TESObjectWEAP>()->GetWeaponType();
+					if (a_type == RE::WEAPON_TYPE::kTwoHandSword || a_type == RE::WEAPON_TYPE::kTwoHandAxe || a_type == RE::WEAPON_TYPE::kBow || a_type == RE::WEAPON_TYPE::kCrossbow) {
+						EquipItem(DummyDagger, GetRightHandSlot(), false, nullptr, false, true);
+						UnequipItem(DummyDagger, GetRightHandSlot(), false, nullptr, false, true);
+					}
+				}
 			}
-		}
-		if (SH_IsSetLefthand[a_index] == 1) {
-			RE::TESForm* a_form = playerref->GetEquippedObject(true);
 
-			if (!a_form)
-				a_EqLeft = true;
-
-			else if (a_form->GetName() != SH_Lefthand[a_index]->GetName()) {
-				a_EqLeft = true;
-			}
-		}
-		if (SH_IsSetShout[a_index] == 1) {
-			RE::TESForm* a_form = GetEquippedShout();
-
-			if (!a_form)
-				a_EqShout = true;
-
-			else if (a_form->GetName() != SH_Shout[a_index]->GetName()) {
-				a_EqShout = true;
-			}
-		}
-
-		a_EqRight ? EquipItem(SH_Righthand[a_index], GetRightHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Righthand_ExtraList[a_index]) : void(0);
-		a_EqLeft ? EquipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
-		a_EqShout ? EquipItem(SH_Shout[a_index], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, nullptr) : void(0);
-
-		for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
 			EquipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
 		}
 	}
@@ -1081,7 +1055,6 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 
 					else if (b_form->GetName() != SH_Righthand[SH_CycleStoredIndex[a_index]]->GetName())
 						IsChanged = true;
-
 				}
 
 				if (SH_IsSetLefthand[SH_CycleStoredIndex[a_index]] == 1 && !IsChanged) {
@@ -1096,7 +1069,6 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 
 					else if (b_form->GetName() != SH_Lefthand[SH_CycleStoredIndex[a_index]]->GetName())
 						IsChanged = true;
-
 				}
 
 				if (SH_IsSetShout[SH_CycleStoredIndex[a_index]] == 1 && !IsChanged) {
@@ -1107,7 +1079,6 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 
 					else if (b_form->GetName() != SH_Shout[SH_CycleStoredIndex[a_index]]->GetName())
 						IsChanged = true;
-
 				}
 
 				if (!IsChanged) {
@@ -1161,16 +1132,25 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 						break;
 					}
 				}
-
 			}
 			//Execute cycle EquipSet
-			if (b_index != -1)
+			if (b_index != -1) {
 				ExecEquip((uint32_t)b_index);
+				if (SH_CycleTimeout[a_index] != 0.0) {
+					if (!SH_CycleLock[a_index]) {
+						SH_CycleLock[a_index] = true;
+						Timer a_timer;
+						a_timer.CreateTimer(a_index, SH_CycleTimeout[a_index]);
+
+					} else
+						SH_CycleTCount[a_index] = 0.0;
+
+				}
+			}
 
 			//Somehow can not find EquipSet. maybe EquipSet deleted so, just let cycle goes on.
-			else 
+			else
 				SH_CurCycle[a_index] >= SH_CycleEquipSetAddedCount[a_index] - (uint32_t)1 ? SH_CurCycle[a_index] = 0 : ++SH_CurCycle[a_index];
-
 		}
 	}
 }
