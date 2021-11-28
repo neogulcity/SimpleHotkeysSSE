@@ -562,12 +562,55 @@ uint32_t SH_CheckString(RE::StaticFunctionTag*, RE::BSFixedString a_string, std:
 	if (temp_string == "")
 		return (uint32_t)2;  // Result = 2 : EquipSet named blank // Result = 2 : EquipSet 이름이 공란임
 
-	else if (ab_string.find(".") == std::string::npos)
-		return (uint32_t)0;
-	else
+	else if (ab_string.find(".") != std::string::npos)
 		return (uint32_t)3;  // Result = 3 : EquipSet named with '.' : Json path solve using '.' so, EquipSet should not be named with '.' // Result = 3 : EquipSet 이름이 '.' 을 포함. Json 에서 '.' 을 이용하기 때문에 '.' 을 포함하면 안됨.
 
+	else if (ab_string.find("[") != std::string::npos || ab_string.find("]") != std::string::npos)
+		return (uint32_t)4;  // Result = 4 : EquipSet named with '[' or ']' // Result = 4 : EquipSet 이름이 '[' 또는 ']'을 포함.
+
+	else
+		(uint32_t)0;
+
 	return (uint32_t)0;
+}
+
+std::vector<RE::BSFixedString> SH_ArraySort(RE::StaticFunctionTag*, std::vector<RE::BSFixedString> src_string, uint32_t Count, uint32_t Type = 3)
+{
+	std::vector<std::string> temp_string;
+	uint32_t MAX = uint32_t(src_string.size()) - Count;
+
+	for (int i = 0; i < src_string.size(); ++i)
+		temp_string.push_back(static_cast<std::string>(src_string[i]));
+
+	for (uint32_t i = 0; i < MAX; ++i) {
+		temp_string.pop_back();
+	}
+
+	// Ascending order
+	if (Type == 1) {
+		sort(temp_string.begin(), temp_string.end());
+	}
+
+	// Descending order
+	else if (Type == 2) {
+		sort(temp_string.begin(), temp_string.end(), std::greater<std::string>());
+	}
+
+	// Creation Descending order
+	else if (Type == 4) {
+		reverse(temp_string.begin(), temp_string.end());
+	}
+
+	// Creation Ascending order
+	else {
+
+	}
+
+	std::vector<RE::BSFixedString> result;
+	for (int i = 0; i < temp_string.size(); ++i)
+		result.push_back(static_cast<RE::BSFixedString>(temp_string[i]));
+	
+	return result;
 }
 
 //Initialize EquipSet Global variables
@@ -1194,6 +1237,7 @@ bool RegisterFuncs(RE::BSScript::Internal::VirtualMachine* a_vm)
 	a_vm->RegisterFunction("SH_PushFirstInArray", "_SimpleHotkeys_MCM", SH_PushFirstInArray);
 	a_vm->RegisterFunction("SH_PushLastInArray", "_SimpleHotkeys_MCM", SH_PushLastInArray);
 	a_vm->RegisterFunction("SH_FindIndexInStringArray", "_SimpleHotkeys_MCM", SH_FindIndexInStringArray);
+	a_vm->RegisterFunction("SH_ArraySort", "_SimpleHotkeys_MCM", SH_ArraySort);
 	a_vm->RegisterFunction("SH_CheckString", "_SimpleHotkeys_MCM", SH_CheckString);
 	a_vm->RegisterFunction("SH_InitializeSKSE_EquipSetData", "_SimpleHotkeys_MCM", SH_InitializeSKSE_EquipSetData);
 	a_vm->RegisterFunction("SH_EquipSetDataToSKSE", "_SimpleHotkeys_MCM", SH_EquipSetDataToSKSE);
