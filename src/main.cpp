@@ -33,31 +33,399 @@ std::vector<std::vector<RE::ExtraDataList*>> SH_Items_ExtraList;
 RE::TESForm* DummyDagger;
 RE::TESForm* DummyShout;
 
-
 std::vector<bool> SH_CycleLock;
 std::vector<float> SH_CycleTCount;
 bool CloseThread = false;
 
-bool IsMenuOpen(RE::UI* UI)
+constexpr RE::FormID QuestFormID = 0xD62;
+const char* ModName = "Simple_Hotkeys.esp";
+
+std::vector<std::vector<int32_t>> SH_WidgetCycleID;
+std::vector<std::vector<RE::BSFixedString>> SH_WidgetCycleIcon;
+
+bool isWidgetOn;
+
+int32_t SH_Modifier1 = 0;
+int32_t SH_Modifier2 = 0;
+int32_t SH_Modifier3 = 0;
+
+RE::BGSEquipSlot* GetEitherHandSlot();
+RE::BGSEquipSlot* GetRightHandSlot();
+RE::BGSEquipSlot* GetLeftHandSlot();
+
+namespace SH
 {
-	bool result = false;
+	enum class kValue
+	{
+		LSword,
+		LDagger,
+		LAxe,
+		LMace,
+		LGreatsword,
+		LBattleaxe,
+		LBow,
+		LStaff,
+		LCrossbow,
+		LAlteration,
+		LConjuration,
+		LDestruction,
+		LIllusion,
+		LRestoration,
+		LPower,
+		LUnarmed,
+		RSword,
+		RDagger,
+		RAxe,
+		RMace,
+		RGreatsword,
+		RBattleaxe,
+		RBow,
+		RStaff,
+		RCrossbow,
+		RAlteration,
+		RConjuration,
+		RDestruction,
+		RIllusion,
+		RRestoration,
+		RPower,
+		RUnarmed,
+		LShield,
+		LTorch,
+		Power,
+		Shout,
+		ShoutNULL
+	};
+
+	class Event
+	{
+		RE::TESQuest* GetScriptTarget(const char* espName, RE::FormID questID);
+		void Hook(bool arg);
+
+		static Event* m_instance;
+		RE::TESQuest* m_eventTarget;
+
+		SKSE::RegistrationSet<bool, int, int, int, RE::BSFixedString> m_OnExecEvent;
+
+	public:
+		static Event& Instance();
+		Event();
+		bool Register();
+		bool Unregister();
+
+		void SendOnExecEvent(bool, const int, const int, const int, RE::BSFixedString);
+	};
+
+	Event* Event::m_instance(nullptr);
+
+	Event& Event::Instance()
+	{
+		if (!m_instance) {
+			m_instance = new Event;
+		}
+		return *m_instance;
+	}
+
+	void Event::Hook(bool arg = true)
+	{
+		arg ? m_OnExecEvent.Register(m_eventTarget) : m_OnExecEvent.Unregister(m_eventTarget);
+	}
+
+	Event::Event() :
+		m_eventTarget(nullptr), m_OnExecEvent("SH_OnExecEvent") {}
+
+	RE::TESQuest* Event::GetScriptTarget(const char* espName, RE::FormID questID)
+	{
+		static RE::TESQuest* quest(nullptr);
+		if (!quest) {
+			RE::TESForm* questForm(RE::TESDataHandler::GetSingleton()->LookupForm(questID, espName));
+			if (questForm) {
+				quest = questForm ? questForm->As<RE::TESQuest>() : nullptr;
+			}
+		}
+
+		return quest;
+	}
+
+	bool Event::Register()
+	{
+		if (!m_eventTarget) {
+			m_eventTarget = GetScriptTarget(ModName, QuestFormID);
+
+			if (m_eventTarget)
+				Hook();
+		}
+
+		return m_eventTarget != nullptr;
+	}
+
+	bool Event::Unregister()
+	{
+		if (!m_eventTarget) {
+			m_eventTarget = GetScriptTarget(ModName, QuestFormID);
+
+			if (m_eventTarget)
+				Hook(false);
+		}
+
+		return m_eventTarget != nullptr;
+	}
+
+	void Event::SendOnExecEvent(bool isCycle, const int index1, const int index2 = 0, const int index3 = 0, RE::BSFixedString argName = "")
+	{
+		m_OnExecEvent.SendEvent(isCycle, index1, index2, index3, argName);
+	}
+}
+
+void SH_RegisterEvent(RE::StaticFunctionTag*)
+{
+	SH::Event::Instance().Register();
+}
+
+void SH_UnregisterEvent(RE::StaticFunctionTag*)
+{
+	SH::Event::Instance().Unregister();
+}
+
+void SH_CreateWidgetIDArray(RE::StaticFunctionTag*, int MAX)
+{
+	std::vector<std::vector<int32_t>> a_SH_WidgetCycleID;
+	SH_WidgetCycleID = a_SH_WidgetCycleID;
+	
+	std::vector<int32_t> temp(MAX, -1);
+
+	for (int i = 0; i < 128; ++i)
+		SH_WidgetCycleID.push_back(temp);
+}
+
+void SH_CreateWidgetIconArray(RE::StaticFunctionTag*, int MAX)
+{
+	std::vector<std::vector<RE::BSFixedString>> a_SH_WidgetCycleIcon;
+	SH_WidgetCycleIcon = a_SH_WidgetCycleIcon;
+
+	std::vector<RE::BSFixedString> temp(MAX, static_cast<RE::BSFixedString>("NULL"));
+
+	for (int i = 0; i < 128; ++i)
+		SH_WidgetCycleIcon.push_back(temp);
+}
+
+void SH_SetWidgetCycleID(RE::StaticFunctionTag*, uint32_t index1, uint32_t index2, int32_t num)
+{
+	SH_WidgetCycleID[index1][index2] = num;
+}
+
+int32_t SH_GetWidgetCycleID(RE::StaticFunctionTag*, uint32_t index1, uint32_t index2)
+{
+	return SH_WidgetCycleID[index1][index2];
+}
+
+void SH_SetWidgetCycleIcon(RE::StaticFunctionTag*, uint32_t index1, uint32_t index2, RE::BSFixedString name)
+{
+	SH_WidgetCycleIcon[index1][index2] = name;
+}
+
+RE::BSFixedString SH_GetWidgetCycleIcon(RE::StaticFunctionTag*, uint32_t index1, uint32_t index2)
+{
+	return SH_WidgetCycleIcon[index1][index2];
+}
+
+void SH_WidgetStatusToSKSE(RE::StaticFunctionTag*, bool status)
+{
+	isWidgetOn = status;
+}
+
+uint32_t SH_GetCycleAddedCount(RE::StaticFunctionTag*, uint32_t index)
+{
+	return SH_CycleEquipSetAddedCount[index];
+}
+
+uint32_t SH_GetCycleAddedEquipSetIndex(RE::StaticFunctionTag*, uint32_t index, uint32_t index2)
+{
+	uint32_t result = 0;
+	for (uint32_t i = 0; i < SH_EquipSetName.size(); ++i) {
+		if (SH_EquipSetName[i] == SH_EquipSets[index][index2]) {
+			result = i;
+			break;
+		}
+	}
+
+	return result;
+}
+
+std::string GetStringFromKeycode(int32_t key)
+{
+	std::vector<std::string> temp(128, "");
+	temp = {
+		"ESC", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+		"0", "-", "=", "Backspace", "Tab", "Q", "W", "E", "R", "T",
+		"Y", "U", "I", "O", "P", "Left Bracket", "Right Bracket", "Enter", "LCtrl", "A",
+		"S", "D", "F", "G", "H", "J", "K", "L", ";", "\"",
+		"~", "LShift", "\\", "Z", "X", "C", "V", "B", "N", "M",
+		",", ".", "/", "RShift", "NUM *", "LAlt", "Spacebar", "Caps Lock", "F1", "F2",
+		"F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "NUM Lock", "Scroll Lock",
+		"NUM 7", "NUM 8", "NUM 9", "NUM -", "NUM 4", "NUM 5", "NUM 6", "NUM +", "NUM1", "NUM 2",
+		"NUM 3", "NUM 0", "NUM .", "F11", "F12", "NUM Enter", "RCtrl", "NUM /", "SysRq / PtrScr", "RAlt",
+		"Pause", "Home", "Up Arrow", "PgUp", "Left Arrow", "Right Arrow", "End", "Down Arrow", "PgDown", "Insert",
+		"Delete", "LMB", "RMB", "M/W MB", "MB3", "MB4", "MB5", "MB6", "MB7", "MW Up",
+		"MW Down", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT", "Start", "Back", "LThumb", "RThumb", "LShoulder",
+		"RShoulder", "A", "B", "X", "Y", "LT", "RT", ""
+	};
+
+	uint32_t result;
+	if (key == -1)
+		result = 127;
+	else if (key < 84)
+		result = key - 1;
+	else if (key < 89)
+		result = key - 4;
+	else if (key < 158)
+		result = key - 71;
+	else if (key == 181)
+		result = key - 94;
+	else if (key < 185)
+		result = key - 95;
+	else if (key == 197)
+		result = key - 107;
+	else if (key < 202)
+		result = key - 108;
+	else if (key == 203)
+		result = key - 109;
+	else if (key == 205)
+		result = key - 110;
+	else if (key < 212)
+		result = key - 111;
+	else
+		result = key - 155;
+
+	return temp[result];
+}
+
+RE::BSFixedString SH_GetHotkeyString(RE::StaticFunctionTag*, uint32_t index)
+{
+	std::string temp = GetStringFromKeycode(SH_Hotkey[index]);
+
+	if (SH_Alt[index] == 1)
+		temp = GetStringFromKeycode(SH_Modifier3) + " + " + temp;
+
+	if (SH_Ctrl[index] == 1)
+		temp = GetStringFromKeycode(SH_Modifier2) + " + " + temp;
+
+	if (SH_Shift[index] == 1)
+		temp = GetStringFromKeycode(SH_Modifier1) + " + " + temp;
+
+	temp = "( " + temp + " )";
+
+	return static_cast<RE::BSFixedString>(temp);
+}
+
+void SH_SendModifierKeyToSKSE(RE::StaticFunctionTag*, int32_t type, int32_t keycode)
+{
+	if (type == 0)
+		SH_Modifier1 = keycode;
+	else if (type == 1)
+		SH_Modifier2 = keycode;
+	else
+		SH_Modifier3 = keycode;
+}
+
+bool SH_IsMenuOpen(RE::StaticFunctionTag*)
+{
+	auto UI = RE::UI::GetSingleton();
 	if (!UI)
+		return false;
+
+	return UI->GameIsPaused() || UI->IsMenuOpen("Crafting Menu") || UI->IsMenuOpen("LootMenu") || UI->IsMenuOpen("Dialogue Menu");
+}
+
+std::vector<RE::BSFixedString> SH_OnWidgetChange(RE::StaticFunctionTag*)
+{
+	//ReturnValue : Type, Slot, DisplayName
+	// Type List : SH::kValue
+	//	Slot = {lefthand(0), righthand(1), eitherhand(2), power/shout(3)}
+
+	std::vector<std::string> tempresult(7, "SH_NULL");
+	std::vector<RE::BSFixedString> result;
+
+	for (int i = 0; i < 7; ++i) {
+		result.push_back(static_cast<RE::BSFixedString>(tempresult[i]));
+	}
+
+	auto playerref = RE::PlayerCharacter::GetSingleton();
+	if (!playerref)
 		return result;
 
-	if (UI->IsMenuOpen("InventoryMenu")) result = true;
-	else if (UI->IsMenuOpen("ContainerMenu")) result = true;
-	else if (UI->IsMenuOpen("MagicMenu")) result = true;
-	else if (UI->IsMenuOpen("MapMenu")) result = true;
-	else if (UI->IsMenuOpen("StatsMenu")) result = true;
-	else if (UI->IsMenuOpen("TweenMenu")) result = true;
-	else if (UI->IsMenuOpen("Quantity Menu")) result = true;
-	else if (UI->IsMenuOpen("Console")) result = true;
-	else if (UI->IsMenuOpen("BarterMenu")) result = true;
-	else if (UI->IsMenuOpen("Book Menu")) result = true;
-	else if (UI->IsMenuOpen("Journal Menu")) result = true;
-	else if (UI->IsMenuOpen("LevelUp Menu")) result = true;
-	else if (UI->IsMenuOpen("Training Menu")) result = true;
+	auto lefthand = playerref->GetEquippedObject(true);
+	auto lhname = lefthand ? lefthand->GetName() : "SH_LUnarmed";
+
+	auto righthand = playerref->GetEquippedObject(false);
+	auto rhname = righthand ? righthand->GetName() : "SH_RUnarmed";
+
+	auto shout = playerref->GetEquippedShout(playerref);
+	auto shoutname = shout? shout->GetName() : "SH_ShoutNULL";
+
+	tempresult[2] = lhname;
+	tempresult[4] = rhname;
+	tempresult[6] = shoutname;
+
+	if (lefthand) {
+		if (lefthand->Is(RE::FormType::Weapon)) {
+			auto Type = lefthand->As<RE::TESObjectWEAP>()->GetWeaponType();
+			int32_t intType = (int32_t)Type;
+			tempresult[1] = std::to_string(intType - 1);
+
+		} else if (lefthand->Is(RE::FormType::Spell)) {
+			auto SkillType = lefthand->As<RE::SpellItem>()->GetAssociatedSkill();
+			auto Type = lefthand->As<RE::SpellItem>()->GetSpellType();
+			int intType = Type == RE::MagicSystem::SpellType::kSpell ? static_cast<int>(SkillType) - 9 : static_cast<int>(SH::kValue::LPower);
+			tempresult[1] = std::to_string(intType);
+
+		} else if (lefthand->Is(RE::FormType::Armor)) {
+			bool IsShield = lefthand->As<RE::TESObjectARMO>()->IsShield();
+			if (!IsShield)
+				return result;
+
+			tempresult[1] = std::to_string(static_cast<int>(SH::kValue::LShield));
+
+		} else if (lefthand->Is(RE::FormType::Light)) {
+			tempresult[1] = std::to_string(static_cast<int>(SH::kValue::LTorch));
+		}
+	} else {
+		tempresult[1] = std::to_string(static_cast<int>(SH::kValue::LUnarmed));
+	}
+
+	if (righthand) {
+		if (righthand->Is(RE::FormType::Weapon)) {
+			auto Type = righthand->As<RE::TESObjectWEAP>()->GetWeaponType();
+			int32_t intType = (int32_t)Type;
+			tempresult[3] = std::to_string(intType + 15);
+
+		} else if (righthand->Is(RE::FormType::Spell)) {
+			auto SkillType = righthand->As<RE::SpellItem>()->GetAssociatedSkill();
+			auto Type = righthand->As<RE::SpellItem>()->GetSpellType();
+			int intType = Type == RE::MagicSystem::SpellType::kSpell ? static_cast<int>(SkillType) + 7 : static_cast<int>(SH::kValue::RPower);
+			tempresult[3] = std::to_string(intType);
+		}
+	} else {
+		tempresult[3] = std::to_string(static_cast<int>(SH::kValue::RUnarmed));
+	}
 	
+
+	if (shout) {
+		tempresult[5] = shout->Is(RE::FormType::Spell) ? std::to_string(static_cast<int>(SH::kValue::Power)) : std::to_string(static_cast<int>(SH::kValue::Shout));
+	} else {
+		tempresult[5] = std::to_string(static_cast<int>(SH::kValue::ShoutNULL));
+	}
+
+	tempresult[0] = "true";
+
+	logger::info("===========================");
+	for (int i = 0; i < 7; ++i)
+		logger::info("tempresult[{}] : {}", i, tempresult[i]);
+
+	logger::info("===========================");
+
+	for (int i = 0; i < 7; ++i)
+		result[i] = static_cast<RE::BSFixedString>(tempresult[i]);
+
 	return result;
 }
 
@@ -69,9 +437,13 @@ public:
 
 void Timer_EndFunction(int32_t id)
 {
+	if (isWidgetOn)
+		SH::Event::Instance().SendOnExecEvent(true, id, SH_CurCycle[id], 0, SH_EquipSets[id][SH_CurCycle[0]]);
+
 	SH_CurCycle[id] = 0;
 	SH_CycleStoredIndex[id] = id;
 	SH_CycleTCount[id] = 0.0;
+
 	SH_CycleLock[id] = false;
 }
 
@@ -85,7 +457,7 @@ int32_t Timer_Function(int32_t id, int32_t input)
 	while (!CloseThread) {
 		if (SH_CycleTCount[id] < MAX) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			if (!CloseThread && !IsMenuOpen(UI))
+			if (!CloseThread && !UI->GameIsPaused())
 				SH_CycleTCount[id] += 100.0;
 
 		} else
@@ -603,13 +975,12 @@ std::vector<RE::BSFixedString> SH_ArraySort(RE::StaticFunctionTag*, std::vector<
 
 	// Creation Ascending order
 	else {
-
 	}
 
 	std::vector<RE::BSFixedString> result;
 	for (int i = 0; i < temp_string.size(); ++i)
 		result.push_back(static_cast<RE::BSFixedString>(temp_string[i]));
-	
+
 	return result;
 }
 
@@ -924,12 +1295,21 @@ void ExecEquip(uint32_t a_index)
 
 	// Toggle equip/unequip option Off & Re equip option On
 	if (SH_EqUeq[a_index] == 0 && SH_Req[a_index] == 1) {
-		EquipRight = true;
-		EquipLeft = true;
-		EquipShout = true;
-		UnequipRight = true;
-		UnequipLeft = true;
-		UnequipShout = true;
+		if (SH_IsSetRighthand[a_index] == 1) {
+			UnequipRight = true;
+			EquipRight = true;
+		}
+
+		if (SH_IsSetLefthand[a_index] == 1) {
+			UnequipLeft = true;
+			EquipLeft = true;
+		}
+
+		if (SH_IsSetShout[a_index] == 1) {
+			UnequipShout = true;
+			EquipShout = true;
+		}
+
 		for (uint32_t i = 0; i < SH_ItemsAddedCount[a_index]; ++i) {
 			EquipItems[i] = true;
 			UnequipItems[i] = true;
@@ -1034,12 +1414,12 @@ void ExecEquip(uint32_t a_index)
 			UnequipItem(SH_Items[a_index][i], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Items_ExtraList[a_index][i]);
 	}
 
+	if (EquipLeft)
+		SH_IsSetLefthand[a_index] == 1 ? EquipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
+
 	if (EquipRight)
 		SH_IsSetRighthand[a_index] == 1 ? EquipItem(SH_Righthand[a_index], GetRightHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Righthand_ExtraList[a_index]) : void(0);
 
-	if (EquipLeft)
-		SH_IsSetLefthand[a_index] == 1 ? EquipItem(SH_Lefthand[a_index], GetLeftHandSlot(), SH_EquipSound[a_index] == (uint32_t)1 ? true : false, SH_Lefthand_ExtraList[a_index]) : void(0);
-	
 	if (EquipShout)
 		SH_IsSetShout[a_index] == 1 ? EquipItem(SH_Shout[a_index], nullptr, SH_EquipSound[a_index] == (uint32_t)1 ? true : false, nullptr) : void(0);
 
@@ -1063,7 +1443,7 @@ void ExecEquip(uint32_t a_index)
 }
 
 //Execute EquipSet Papyrus Function
-void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
+bool SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 {
 	int a_index = -1;
 	for (int i = 0; i < SH_EquipSetName.size(); ++i) {
@@ -1077,6 +1457,9 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 		if (SH_IsCycleEquipSet[a_index] != 1) {
 			ExecEquip((uint32_t)a_index);
 
+			if (isWidgetOn)
+				SH::Event::Instance().SendOnExecEvent(false, a_index);
+
 		} else {
 			int b_index = -1;
 
@@ -1089,7 +1472,7 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 				if (SH_IsSetRighthand[SH_CycleStoredIndex[a_index]] == 1) {
 					auto playerref = RE::PlayerCharacter::GetSingleton();
 					if (!playerref)
-						return;
+						return false;
 
 					RE::TESForm* b_form = playerref->GetEquippedObject(false);
 
@@ -1103,7 +1486,7 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 				if (SH_IsSetLefthand[SH_CycleStoredIndex[a_index]] == 1 && !IsChanged) {
 					auto playerref = RE::PlayerCharacter::GetSingleton();
 					if (!playerref)
-						return;
+						return false;
 
 					RE::TESForm* b_form = playerref->GetEquippedObject(true);
 
@@ -1179,6 +1562,12 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 			//Execute cycle EquipSet
 			if (b_index != -1) {
 				ExecEquip((uint32_t)b_index);
+
+				if (isWidgetOn) {
+					uint32_t temp_index = SH_CurCycle[a_index] <= 0 ? SH_CycleEquipSetAddedCount[a_index] - 1 : SH_CurCycle[a_index] - 1;
+					SH::Event::Instance().SendOnExecEvent(true, a_index, temp_index, SH_CurCycle[a_index], SH_EquipSets[a_index][SH_CurCycle[a_index]]);
+				}
+
 				if (SH_CycleTimeout[a_index] != 0.0) {
 					if (!SH_CycleLock[a_index]) {
 						SH_CycleLock[a_index] = true;
@@ -1187,15 +1576,18 @@ void SH_ExecEquip(RE::StaticFunctionTag*, uint32_t keycode)
 
 					} else
 						SH_CycleTCount[a_index] = 0.0;
-
 				}
 			}
 
 			//Somehow can not find EquipSet. maybe EquipSet deleted so, just let cycle goes on.
-			else
+			else {
 				SH_CurCycle[a_index] >= SH_CycleEquipSetAddedCount[a_index] - (uint32_t)1 ? SH_CurCycle[a_index] = 0 : ++SH_CurCycle[a_index];
+			}
 		}
-	}
+	} else
+		return false;
+
+	return true;
 }
 
 bool SH_IsPlayerBeast(RE::StaticFunctionTag*)
@@ -1204,20 +1596,17 @@ bool SH_IsPlayerBeast(RE::StaticFunctionTag*)
 	return a_menu->InBeastForm();
 }
 
-void SH_DummyDaggerToSKSE(RE::StaticFunctionTag*, RE::TESForm* a_form)
+void SH_DummyToSKSE(RE::StaticFunctionTag*, RE::TESForm* a_form, RE::TESForm* b_form)
 {
 	if (!a_form)
 		return;
 
 	DummyDagger = a_form;
-}
 
-void SH_DummyShoutToSKSE(RE::StaticFunctionTag*, RE::TESForm* a_form)
-{
-	if (!a_form)
+	if (!b_form)
 		return;
 
-	DummyShout = a_form;
+	DummyShout = b_form;
 }
 
 RE::BSFixedString SH_GetVersion(RE::StaticFunctionTag*)
@@ -1244,8 +1633,23 @@ bool RegisterFuncs(RE::BSScript::Internal::VirtualMachine* a_vm)
 	a_vm->RegisterFunction("SH_ExecEquip", "_SimpleHotkeys_MCM", SH_ExecEquip);
 	a_vm->RegisterFunction("SH_IsPlayerBeast", "_SimpleHotkeys_MCM", SH_IsPlayerBeast);
 	a_vm->RegisterFunction("SH_GetVersion", "_SimpleHotkeys_MCM", SH_GetVersion);
-	a_vm->RegisterFunction("SH_DummyDaggerToSKSE", "_SimpleHotkeys_MCM", SH_DummyDaggerToSKSE);
-	a_vm->RegisterFunction("SH_DummyShoutToSKSE", "_SimpleHotkeys_MCM", SH_DummyShoutToSKSE);
+	a_vm->RegisterFunction("SH_DummyToSKSE", "_SimpleHotkeys_MCM", SH_DummyToSKSE);
+	a_vm->RegisterFunction("SH_RegisterEvent", "_SimpleHotkeys_MCM", SH_RegisterEvent);
+	a_vm->RegisterFunction("SH_CreateWidgetIDArray", "_SimpleHotkeys_MCM", SH_CreateWidgetIDArray);
+	a_vm->RegisterFunction("SH_CreateWidgetIconArray", "_SimpleHotkeys_MCM", SH_CreateWidgetIconArray);
+	a_vm->RegisterFunction("SH_SetWidgetCycleID", "_SimpleHotkeys_MCM", SH_SetWidgetCycleID);
+	a_vm->RegisterFunction("SH_SetWidgetCycleIcon", "_SimpleHotkeys_MCM", SH_SetWidgetCycleIcon);
+	a_vm->RegisterFunction("SH_GetWidgetCycleID", "_SimpleHotkeys_MCM", SH_GetWidgetCycleID);
+	a_vm->RegisterFunction("SH_GetWidgetCycleIcon", "_SimpleHotkeys_MCM", SH_GetWidgetCycleIcon);
+	a_vm->RegisterFunction("SH_GetCycleAddedCount", "_SimpleHotkeys_MCM", SH_GetCycleAddedCount);
+	a_vm->RegisterFunction("SH_GetHotkeyString", "_SimpleHotkeys_MCM", SH_GetHotkeyString);
+	a_vm->RegisterFunction("SH_SendModifierKeyToSKSE", "_SimpleHotkeys_MCM", SH_SendModifierKeyToSKSE);
+	a_vm->RegisterFunction("SH_WidgetStatusToSKSE", "_SimpleHotkeys_MCM", SH_WidgetStatusToSKSE);
+	a_vm->RegisterFunction("SH_GetCycleAddedEquipSetIndex", "_SimpleHotkeys_MCM", SH_GetCycleAddedEquipSetIndex);
+	a_vm->RegisterFunction("SH_IsMenuOpen", "_SimpleHotkeys_MCM", SH_IsMenuOpen);
+	a_vm->RegisterFunction("SH_OnWidgetChange", "_SimpleHotkeys_MCM", SH_OnWidgetChange);
+
+	a_vm->RegisterFunction("SH_OnWidgetChange", "_SimpleHotkeys_Alias", SH_OnWidgetChange);
 
 	return true;
 }
